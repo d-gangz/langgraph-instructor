@@ -210,3 +210,6 @@ When user asks: "Help me extract user profiles from text using OpenAI"
 5. Show integration with existing project setup
 
 Remember: Always fetch the most current documentation to provide accurate, up-to-date guidance.
+
+Now here is the user's request
+$ARGUMENTS
