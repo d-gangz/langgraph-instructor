@@ -98,40 +98,45 @@ def chatbot(state: State) -> State:
     response = client.responses.create(
         model="gpt-5-nano",
         reasoning={"effort": "low"},
+        instructions="You are a helpful assistant that can use tools to get information. Before you call a tool, explain why you are calling it",
         text={"verbosity": "low"},
         input=input_text,
         tools=openai_tools,  # type: ignore
     )
 
     # Convert GPT-5 Response API output to LangGraph-compatible format
-    messages = []
+    # Collect all content and function calls to create a single coherent message
+    text_content = ""
+    tool_calls = []
 
     for item in response.output:
         if item.type == "message":
-            # Extract text content from message
-            content = ""
+            # Extract text content from message items
             for content_item in item.content:
                 if content_item.type == "output_text":
-                    content = content_item.text
-
-            messages.append({"role": "assistant", "content": content})
+                    text_content += content_item.text
 
         elif item.type == "function_call":
-            # Convert function call to LangGraph tool_calls format
-            tool_call_message = {
-                "role": "assistant",
-                "content": "",  # Empty content for tool calls
-                "tool_calls": [
-                    {
-                        "id": item.call_id,
-                        "type": "function",
-                        "function": {"name": item.name, "arguments": item.arguments},
-                    }
-                ],
-            }
-            messages.append(tool_call_message)  # type: ignore
+            # Collect all function calls
+            tool_calls.append(
+                {
+                    "id": item.call_id,
+                    "type": "function",
+                    "function": {"name": item.name, "arguments": item.arguments},
+                }
+            )
 
-    return {"messages": messages}
+    # Create a single assistant message with both content and tool calls
+    assistant_message = {
+        "role": "assistant",
+        "content": text_content,
+    }
+
+    # Add tool_calls if any were made
+    if tool_calls:
+        assistant_message["tool_calls"] = tool_calls  # type: ignore
+
+    return {"messages": [assistant_message]}
 
 
 graph_builder.add_node("chatbot", chatbot)
