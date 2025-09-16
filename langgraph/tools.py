@@ -190,13 +190,42 @@ def stream_graph_updates(user_message: str) -> None:
     """Stream updates from the graph for the given user input."""
     initial_state = {"messages": [{"role": "user", "content": user_message}]}
     for event in compiled_graph.stream(initial_state):  # type: ignore
-        for value in event.values():
+        for node_name, value in event.items():
+            print(f"\n--- {node_name} ---")
+
             # Handle both LangGraph message objects and dict responses
             last_msg = value["messages"][-1]
+
+            # Extract content
             if hasattr(last_msg, "content"):
-                print("Assistant:", last_msg.content)
+                content = last_msg.content
+                tool_calls = getattr(last_msg, "tool_calls", None)
             else:
-                print("Assistant:", last_msg["content"])
+                content = last_msg.get("content", "")
+                tool_calls = last_msg.get("tool_calls", None)
+
+            # Show the content
+            if content:
+                print(f"Content: {content}")
+
+            # Show tool calls if any
+            if tool_calls:
+                print("Tool calls:")
+                for tool_call in tool_calls:
+                    if isinstance(tool_call, dict):
+                        function_name = tool_call.get("function", {}).get(
+                            "name", "unknown"
+                        )
+                        arguments = tool_call.get("function", {}).get("arguments", "{}")
+                        print(f"  - {function_name}({arguments})")
+                    else:
+                        print(f"  - {tool_call}")
+
+            # Show tool results if this is a tool node
+            if node_name == "tools" and content:
+                print(
+                    f"Tool result: {content[:200]}{'...' if len(content) > 200 else ''}"
+                )
 
 
 if __name__ == "__main__":
