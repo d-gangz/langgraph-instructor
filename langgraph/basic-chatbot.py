@@ -1,3 +1,13 @@
+"""
+Basic LangGraph chatbot that uses OpenAI's GPT-5 Responses API with proper message conversion utilities.
+
+Input data sources: User input from command line interface
+Output destinations: Console output for chat responses
+Dependencies: OpenAI API key, LangSmith API key for tracing
+Key exports: chatbot(), stream_graph_updates()
+Side effects: Makes OpenAI API calls, prints to console
+"""
+
 from typing import Annotated
 
 from langgraph import graph
@@ -9,6 +19,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from IPython.display import Image, display
 from langsmith.wrappers import wrap_openai
+from langchain_core.messages.utils import convert_to_openai_messages
 
 load_dotenv()
 
@@ -25,26 +36,15 @@ client = wrap_openai(OpenAI())
 
 
 def chatbot(state: State) -> State:
-    # Convert LangGraph messages to OpenAI responses API format
-    # For multi-turn conversations, we need to format messages properly
+    # Convert LangGraph messages to OpenAI format using the proper utility
+    openai_messages = convert_to_openai_messages(state["messages"])
+
+    # Handle single message case - extract just the content as string
     if len(state["messages"]) == 1:
-        # Single message - use simple string input
-        user_msg = state["messages"][0]
-        if hasattr(user_msg, "content"):
-            input_text = user_msg.content
-        else:
-            input_text = user_msg["content"]
+        input_text = openai_messages[0]["content"]
     else:
-        # Multi-turn conversation - format as messages array
-        messages = []
-        for msg in state["messages"]:
-            if hasattr(msg, "type") and hasattr(msg, "content"):
-                # LangGraph message object - convert to responses API format
-                messages.append({"role": msg.type, "content": msg.content})
-            elif isinstance(msg, dict) and "role" in msg and "content" in msg:
-                # Already in correct format
-                messages.append(msg)
-        input_text = messages
+        # Multi-turn conversation - use the converted messages array
+        input_text = openai_messages
 
     response = client.responses.create(
         model="gpt-5-nano",
