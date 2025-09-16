@@ -166,6 +166,49 @@ def custom_tools_condition(state):
 
 ## Complex Scenarios Handling
 
+### Conversation History with Tool Results
+
+**Critical Discovery:** The GPT-5 Responses API does NOT accept `tool_calls` fields or `tool` role messages in the input array. This causes errors:
+
+```python
+# ✗ This FAILS with "Unknown parameter: 'input[1].tool_calls'"
+input_messages = [
+    {"role": "user", "content": "What's the weather?"},
+    {"role": "assistant", "tool_calls": [...], "content": "..."},  # ERROR
+    {"role": "tool", "content": "..."}  # Also not recognized
+]
+```
+
+**Solution:** Filter and transform messages before sending to Responses API:
+
+```python
+# ✓ This WORKS - Filter out tool_calls and convert tool messages
+filtered_messages = []
+for msg in openai_messages:
+    if msg["role"] == "assistant" and "tool_calls" in msg:
+        # Remove tool_calls field, keep only role and content
+        filtered_messages.append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+    elif msg["role"] == "tool":
+        # Convert tool message to assistant message with labeled content
+        tool_result_content = f"[Tool Result from {msg.get('name')}]: {msg['content']}"
+        filtered_messages.append({
+            "role": "assistant",
+            "content": tool_result_content
+        })
+    else:
+        # Keep other messages as-is
+        filtered_messages.append(msg)
+```
+
+**Important Insights:**
+1. **Label tool results clearly** (e.g., `[Tool Result from...]`) to prevent the model from making duplicate tool calls
+2. **Tool role not supported** - Convert `tool` role messages to `assistant` role
+3. **No tool_calls in input** - The Responses API generates tool calls but doesn't accept them in conversation history
+4. **Prevents infinite loops** - Without proper labeling, the model may repeatedly call the same tool
+
 ### Multiple Tool Calls in Single Response
 
 GPT-5 can return multiple `function_call` items in one response:
@@ -253,6 +296,18 @@ for item in response.output:
    W0611: Unused tools_condition imported from langgraph.prebuilt
    ```
    **Solution:** Clean up imports when switching between custom/prebuilt
+
+5. **Unknown parameter error with tool_calls**
+   ```
+   Error code: 400 - {'error': {'message': "Unknown parameter: 'input[1].tool_calls'."}}
+   ```
+   **Solution:** Filter out `tool_calls` from assistant messages before sending to Responses API
+
+6. **Duplicate tool calls in conversation loop**
+   ```
+   # Model keeps calling the same tool repeatedly
+   ```
+   **Solution:** Label tool results clearly (e.g., `[Tool Result from...]`) when converting to assistant messages
 
 ### Debugging Techniques
 
@@ -397,11 +452,22 @@ class State(TypedDict):
 def chatbot(state: State) -> State:
     openai_messages = convert_to_openai_messages(state["messages"])
 
+    # Filter messages for Responses API (remove tool_calls, convert tool messages)
+    filtered_messages = []
+    for msg in openai_messages:
+        if msg["role"] == "assistant" and "tool_calls" in msg:
+            filtered_messages.append({"role": msg["role"], "content": msg["content"]})
+        elif msg["role"] == "tool":
+            tool_result = f"[Tool Result from {msg.get('name')}]: {msg['content']}"
+            filtered_messages.append({"role": "assistant", "content": tool_result})
+        else:
+            filtered_messages.append(msg)
+
     # Handle single vs multi-turn
-    if len(state["messages"]) == 1:
-        input_text = openai_messages[0]["content"]
+    if len(filtered_messages) == 1:
+        input_text = filtered_messages[0]["content"]
     else:
-        input_text = openai_messages
+        input_text = filtered_messages
 
     response = client.responses.create(
         model="gpt-5-nano",
@@ -595,5 +661,5 @@ This integration unlocks the performance benefits of GPT-5 Responses API while m
 ---
 
 *Document created: 2025-01-16*
-*Last updated: 2025-01-16*
-*Version: 1.0*
+*Last updated: 2025-09-16*
+*Version: 1.1*

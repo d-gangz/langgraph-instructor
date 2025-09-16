@@ -87,18 +87,45 @@ def chatbot(state: State) -> State:
     """Process user messages and generate responses using GPT-5."""
     # Convert LangGraph messages to OpenAI format using the proper utility
     openai_messages = convert_to_openai_messages(state["messages"])
+    # print("Original openai_messages:", openai_messages)
+
+    # Filter messages for Responses API - remove tool_calls field
+    filtered_messages = []
+    for msg in openai_messages:
+        if msg["role"] == "assistant" and "tool_calls" in msg:
+            # Keep assistant message but remove tool_calls field
+            filtered_msg = {"role": msg["role"], "content": msg["content"]}
+            filtered_messages.append(filtered_msg)
+        elif msg["role"] == "tool":
+            # Combine tool result with the previous assistant message
+            # Format it to show this is a tool result, not just random text
+            tool_result_content = (
+                f"[Tool Result from {msg.get('name', 'tool')}]: {msg['content']}"
+            )
+            filtered_msg = {"role": "assistant", "content": tool_result_content}
+            filtered_messages.append(filtered_msg)
+        else:
+            # Keep other messages as-is
+            filtered_messages.append(msg)
+
+    # assistant_count = len([m for m in openai_messages if m["role"] == "assistant"])
+    # print(f"\n=== Iteration #{assistant_count} ===")
+    # print("Filtered messages for Responses API:", filtered_messages)
 
     # Handle single message case - extract just the content as string
-    if len(state["messages"]) == 1:
-        input_text = openai_messages[0]["content"]
+    if len(filtered_messages) == 1:
+        input_text = filtered_messages[0]["content"]
     else:
-        # Multi-turn conversation - use the converted messages array
-        input_text = openai_messages
+        # Multi-turn conversation - use the filtered messages array
+        input_text = filtered_messages
 
     response = client.responses.create(
         model="gpt-5-nano",
         reasoning={"effort": "low"},
-        instructions="You are a helpful assistant that can use tools to get information. Before you call a tool, explain why you are calling it",
+        instructions=(
+            "You are a helpful assistant that can use tools to get information. "
+            "Before you call a tool, explain why you are calling it"
+        ),
         text={"verbosity": "low"},
         input=input_text,
         tools=openai_tools,  # type: ignore
@@ -148,6 +175,7 @@ graph_builder.add_conditional_edges(
     # Using prebuilt tools_condition since we convert to standard format
     tools_condition,
 )
+graph_builder.add_edge("tools", "chatbot")
 
 compiled_graph = graph_builder.compile()
 
