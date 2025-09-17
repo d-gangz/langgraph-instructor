@@ -1,7 +1,7 @@
 """
-Builds upon 1-basic-chatbot.py by adding tools.
+Builds upon 2-tools.py by adding memory.
 
-Added logic so that the system prompt is always added to the messages and tools are added to the chatbot. The forms the simple reAct agent
+Added memory to the chatbot. And ok I checked Langsmith and there is the proven caching that is happening. So everything seems to be working. I have a basic reAct agent with memory working.
 """
 
 from langchain_openai import ChatOpenAI
@@ -14,6 +14,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from tavily import TavilyClient
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import InMemorySaver
 
 load_dotenv()
 
@@ -63,9 +64,10 @@ def chatbot(state: MessagesState):
     return {"messages": [response]}
 
 
-# The first argument is the unique node name
-# The second argument is the function or object that will be called whenever
-# the node is used.
+memory = InMemorySaver()
+
+config = {"configurable": {"thread_id": "1"}}
+
 # Define nodes
 graph_builder.add_node("chatbot", chatbot)
 graph_builder.add_node("tools", ToolNode(tools))
@@ -74,7 +76,7 @@ graph_builder.add_node("tools", ToolNode(tools))
 graph_builder.add_edge(START, "chatbot")
 graph_builder.add_conditional_edges("chatbot", tools_condition)
 graph_builder.add_edge("tools", "chatbot")
-graph = graph_builder.compile()
+graph = graph_builder.compile(checkpointer=memory)
 
 try:
     display(Image(graph.get_graph().draw_mermaid_png()))
@@ -85,7 +87,7 @@ except Exception:
 
 # running the chatbot
 def stream_graph_updates(user_input: str):
-    for event in graph.stream({"messages": [HumanMessage(content=user_input)]}):
+    for event in graph.stream({"messages": [HumanMessage(content=user_input)]}, config):
         for value in event.values():
             # print("Assistant:", value["messages"][-1].content)
             # using this way, u can see the tool calls and results

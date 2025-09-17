@@ -44,6 +44,65 @@ For OpenAI chat models (gpt-4o, gpt-4, gpt-3.5-turbo), it's best to use ChatOpen
 [19](https://github.com/langchain-ai/langchain/discussions/25283)
 [20](https://docs.langchain.com/oss/python/integrations/chat)
 
+# System Prompt Management in LangGraph
+
+When building LangGraph applications with streaming capabilities, managing system prompts consistently across message flows is crucial. The challenge is ensuring the system prompt is always included in LLM calls while keeping the actual state clean.
+
+## Recommended Pattern: Check-and-Prepend in Node Function
+
+The most effective approach is to handle system prompt injection at the node level, right before calling the LLM:
+
+```python
+SYSTEM_PROMPT = """
+You are a helpful assistant that can use tools to get information.
+Before you call a tool, explain why you are calling it
+"""
+
+def chatbot(state: MessagesState):
+    messages = state["messages"]
+    # add the system prompt if it's not there
+    if not (messages and messages[0].type == "system"):
+        messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+    response = llm_with_tools.invoke(messages)
+    return {"messages": [response]}
+```
+
+### Why This Pattern Works
+
+- **Clean State**: The system prompt is not stored in the persistent state, keeping message history focused on actual conversation
+- **Always Present**: Every LLM call gets the system prompt for proper context
+- **Streaming Compatible**: Works seamlessly with `stream_graph_updates` and other streaming methods
+- **Simple Logic**: Easy to understand and maintain
+- **No Duplication**: Prevents multiple system prompts from accumulating in state
+
+### Message Flow Example
+
+```
+Initial State: [HumanMessage("Hello")]
+↓
+chatbot() processes: [SystemMessage(SYSTEM_PROMPT), HumanMessage("Hello")]
+↓
+LLM Response: AIMessage("Hi there!")
+↓
+Updated State: [HumanMessage("Hello"), AIMessage("Hi there!")]
+```
+
+Next interaction:
+
+```
+State: [HumanMessage("Hello"), AIMessage("Hi there!"), HumanMessage("How are you?")]
+↓
+chatbot() processes: [SystemMessage(SYSTEM_PROMPT), HumanMessage("Hello"), AIMessage("Hi there!"), HumanMessage("How are you?")]
+```
+
+### Alternative Approaches (Less Recommended)
+
+1. **State Initialization**: Adding system prompt to initial state works but can lead to accumulation issues
+2. **Custom Reducer**: Overkill for most use cases and adds complexity
+3. **Preprocessor Node**: Extra complexity without significant benefits
+
+The check-and-prepend pattern strikes the perfect balance between simplicity and functionality for most LangGraph applications.
+
 # Better Langgraph Message state implementation
 
 The recommended and most stable implementation for handling message state in LangGraph is to subclass the built-in `MessagesState` rather than defining a custom `TypedDict` with the `add_messages` reducer manually.[1][2][3][4]
@@ -114,3 +173,8 @@ The built-in `MessagesState` pattern is the default and standard for nearly all 
 [18](https://www.getzep.com/ai-agents/langgraph-tutorial/)
 [19](https://python.langchain.com/docs/concepts/messages/)
 [20](https://milvus.io/blog/langchain-vs-langgraph.md)
+
+# Langgraph streaming
+
+Check out this page if I wana learn about streaming
+https://docs.langchain.com/oss/python/langgraph/streaming#node
