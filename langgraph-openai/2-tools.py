@@ -1,5 +1,5 @@
 """
-Builds upon basic-chatbot.py by adding tools.
+Builds upon 1-basic-chatbot.py by adding tools.
 
 Input data sources: User input from command line interface
 Output destinations: Console output for chat responses

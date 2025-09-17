@@ -8,6 +8,14 @@ Target Use: Reference guide for future development and troubleshooting
 
 # LangGraph + OpenAI GPT-5 Responses API Integration Guide
 
+## Important Learnings
+
+The key difficulty when using **LangGraph** with **OpenAI** is the message shape transformation. LangGraph uses LangChain's message format under the hood, which differs significantly from OpenAI's message format, especially with the Responses API.
+
+This transformation is particularly challenging because when using the LangChain helpers, they don't transform properly for the Responses API. The conclusion is to use **LangGraph** with only a very primitive layer of **LangChain**. The issue with LangChain being overly abstracted becomes apparent when doing things that go beyond the primitive level.
+
+**Key insight:** For advanced use cases like the GPT-5 Responses API, stick to LangGraph's core orchestration capabilities and implement the responses API using primitive Langchain.
+
 ## Overview
 
 This document captures key learnings, patterns, and solutions discovered while integrating OpenAI's new GPT-5 Responses API with LangGraph for tool-calling applications.
@@ -31,6 +39,7 @@ This document captures key learnings, patterns, and solutions discovered while i
 The GPT-5 Responses API introduces a fundamentally different response structure:
 
 **Chat Completions API:**
+
 ```python
 response = client.chat.completions.create(...)
 message = response.choices[0].message
@@ -39,6 +48,7 @@ tool_calls = message.tool_calls  # Standard format
 ```
 
 **GPT-5 Responses API:**
+
 ```python
 response = client.responses.create(...)
 # response.output is an array of Item objects
@@ -51,13 +61,13 @@ for item in response.output:
 
 ### Key Structural Differences
 
-| Aspect | Chat Completions | GPT-5 Responses |
-|--------|-----------------|-----------------|
-| Response Structure | `choices` array | `output` array |
-| Message Format | Single `message` object | Multiple `Item` objects |
-| Content Access | `message.content` | `item.content[].text` |
-| Tool Calls | `message.tool_calls` | `function_call` items |
-| Reasoning | Not available | `reasoning` items |
+| Aspect             | Chat Completions        | GPT-5 Responses         |
+| ------------------ | ----------------------- | ----------------------- |
+| Response Structure | `choices` array         | `output` array          |
+| Message Format     | Single `message` object | Multiple `Item` objects |
+| Content Access     | `message.content`       | `item.content[].text`   |
+| Tool Calls         | `message.tool_calls`    | `function_call` items   |
+| Reasoning          | Not available           | `reasoning` items       |
 
 ## Response Format Conversion
 
@@ -112,6 +122,7 @@ def convert_gpt5_response(response):
 ### Tool Definition Differences
 
 **GPT-5 Responses API (Internally Tagged):**
+
 ```python
 {
     "type": "function",
@@ -122,6 +133,7 @@ def convert_gpt5_response(response):
 ```
 
 **Chat Completions API (Externally Tagged):**
+
 ```python
 {
     "type": "function",
@@ -150,6 +162,7 @@ graph_builder.add_conditional_edges(
 ### Custom vs Prebuilt Conditions
 
 **Initially considered:** Custom condition for GPT-5 format
+
 ```python
 def custom_tools_condition(state):
     # Check for GPT-5 specific response format
@@ -160,6 +173,7 @@ def custom_tools_condition(state):
 ```
 
 **Better approach:** Convert format + use prebuilt condition
+
 - More maintainable
 - Leverages LangGraph's battle-tested logic
 - Works with ecosystem tools
@@ -204,6 +218,7 @@ for msg in openai_messages:
 ```
 
 **Important Insights:**
+
 1. **Label tool results clearly** (e.g., `[Tool Result from...]`) to prevent the model from making duplicate tool calls
 2. **Tool role not supported** - Convert `tool` role messages to `assistant` role
 3. **No tool_calls in input** - The Responses API generates tool calls but doesn't accept them in conversation history
@@ -274,33 +289,43 @@ for item in response.output:
 ### Common Errors and Fixes
 
 1. **Unsupported message type error**
+
    ```
    NotImplementedError: Unsupported message type: <class 'openai.types.responses.response.Response'>
    ```
+
    **Solution:** Convert GPT-5 Response to standard message format
 
 2. **Type errors with tool_calls**
+
    ```
    error: Argument has incompatible type "dict[str, Sequence[Collection[str]]]"
    ```
+
    **Solution:** Add `# type: ignore` for complex tool call structures
 
 3. **tools_condition not routing to tools**
+
    ```
    # GPT-5 made function call but routed to END instead of tools
    ```
+
    **Solution:** Ensure proper conversion creates `tool_calls` attribute
 
 4. **Import errors with unused conditions**
+
    ```
    W0611: Unused tools_condition imported from langgraph.prebuilt
    ```
+
    **Solution:** Clean up imports when switching between custom/prebuilt
 
 5. **Unknown parameter error with tool_calls**
+
    ```
    Error code: 400 - {'error': {'message': "Unknown parameter: 'input[1].tool_calls'."}}
    ```
+
    **Solution:** Filter out `tool_calls` from assistant messages before sending to Responses API
 
 6. **Duplicate tool calls in conversation loop**
@@ -312,6 +337,7 @@ for item in response.output:
 ### Debugging Techniques
 
 1. **Log response structure**
+
    ```python
    for item in response.output:
        print(f"Item type: {item.type}")
@@ -320,6 +346,7 @@ for item in response.output:
    ```
 
 2. **Verify message format**
+
    ```python
    print(f"Message has tool_calls: {'tool_calls' in assistant_message}")
    print(f"Tool calls count: {len(assistant_message.get('tool_calls', []))}")
@@ -337,12 +364,14 @@ for item in response.output:
 ### API Configuration
 
 1. **Use appropriate reasoning effort**
+
    ```python
    reasoning={"effort": "low"}  # For faster responses
    reasoning={"effort": "high"} # For complex tasks
    ```
 
 2. **Add helpful instructions**
+
    ```python
    instructions="You are a helpful assistant that can use tools. Before calling a tool, explain why."
    ```
@@ -356,6 +385,7 @@ for item in response.output:
 ### Code Organization
 
 1. **Separate conversion logic**
+
    ```python
    def convert_gpt5_response(response):
        # Dedicated conversion function
@@ -367,6 +397,7 @@ for item in response.output:
    ```
 
 2. **Use type hints strategically**
+
    ```python
    def chatbot(state: State) -> State:
        # Clear function signatures
@@ -383,11 +414,13 @@ for item in response.output:
 ### Development Workflow
 
 1. **Test with direct execution**
+
    ```bash
    echo "test question" | uv run python langgraph/tools.py
    ```
 
 2. **Use conventional commits**
+
    ```
    feat(tools): add GPT-5 integration
    fix(tools): handle multiple tool calls
@@ -411,6 +444,7 @@ for item in response.output:
 ### Optimization Strategies
 
 1. **Use appropriate model variants**
+
    ```python
    model="gpt-5"      # Complex reasoning tasks
    model="gpt-5-mini" # Balanced performance
@@ -418,6 +452,7 @@ for item in response.output:
    ```
 
 2. **Configure for use case**
+
    ```python
    # Fast responses
    reasoning={"effort": "minimal"}
@@ -547,11 +582,13 @@ def function_name(param1: str) -> dict:
 ### Quick Diagnostic Checklist
 
 1. **Response format issues**
+
    - [ ] Are you converting GPT-5 Response to standard message format?
    - [ ] Are you handling both `message` and `function_call` items?
    - [ ] Are you aggregating content properly?
 
 2. **Tool calling problems**
+
    - [ ] Are tool definitions in correct format (internally tagged)?
    - [ ] Are you collecting all tool calls into single message?
    - [ ] Is `tools_condition` detecting the `tool_calls` attribute?
@@ -563,17 +600,18 @@ def function_name(param1: str) -> dict:
 
 ### Common Fixes
 
-| Problem | Solution |
-|---------|----------|
-| "Unsupported message type" | Convert GPT-5 Response to standard format |
-| Tools not being called | Check tool_calls attribute in message |
-| Multiple tool calls splitting | Aggregate all calls into single message |
-| Type errors | Add strategic type ignores |
-| Import warnings | Clean up unused imports |
+| Problem                       | Solution                                  |
+| ----------------------------- | ----------------------------------------- |
+| "Unsupported message type"    | Convert GPT-5 Response to standard format |
+| Tools not being called        | Check tool_calls attribute in message     |
+| Multiple tool calls splitting | Aggregate all calls into single message   |
+| Type errors                   | Add strategic type ignores                |
+| Import warnings               | Clean up unused imports                   |
 
 ### Testing Strategies
 
 1. **Unit test conversion**
+
    ```python
    def test_response_conversion():
        mock_response = create_mock_gpt5_response()
@@ -582,6 +620,7 @@ def function_name(param1: str) -> dict:
    ```
 
 2. **Integration test**
+
    ```python
    def test_full_flow():
        result = graph.invoke({"messages": [{"role": "user", "content": "test"}]})
@@ -598,6 +637,7 @@ def function_name(param1: str) -> dict:
 ### From Chat Completions to GPT-5 Responses
 
 1. **Update API calls**
+
    ```python
    # Before
    response = client.chat.completions.create(...)
@@ -607,12 +647,14 @@ def function_name(param1: str) -> dict:
    ```
 
 2. **Add conversion layer**
+
    ```python
    # Add response format conversion
    return convert_gpt5_response(response)
    ```
 
 3. **Update tool definitions**
+
    ```python
    # Remove external function wrapper
    # Add proper parameter structures
@@ -660,6 +702,6 @@ This integration unlocks the performance benefits of GPT-5 Responses API while m
 
 ---
 
-*Document created: 2025-01-16*
-*Last updated: 2025-09-16*
-*Version: 1.1*
+_Document created: 2025-01-16_
+_Last updated: 2025-09-16_
+_Version: 1.1_
