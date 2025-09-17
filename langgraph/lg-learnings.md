@@ -174,6 +174,57 @@ The built-in `MessagesState` pattern is the default and standard for nearly all 
 [19](https://python.langchain.com/docs/concepts/messages/)
 [20](https://milvus.io/blog/langchain-vs-langgraph.md)
 
+# LangGraph Interrupt and Resume Mechanism
+
+## How LangGraph Tracks Tool Context During Interrupts
+
+When `interrupt()` is called within a tool, LangGraph doesn't just pause - it leverages its **durable execution** system to preserve execution context through checkpointing.
+
+### What Gets Preserved:
+
+1. **Graph State**: Complete state snapshot at each super-step
+2. **Node Position**: Which node was executing when interrupted
+3. **Tool Context**: Tool call ID and execution metadata
+4. **Thread State**: Entire conversation and execution history
+
+### Key Insight: Node-Level Resumption
+
+**Important**: LangGraph resumes at the **beginning of the node** where the interrupt occurred, not at the exact line of code. This means:
+
+```python
+@tool
+def human_assistance(query: str) -> str:
+    """Request assistance from a human."""
+    human_response = interrupt({"query": query})  # ← Interrupt here
+    return human_response["data"]  # ← But resume from function start
+```
+
+When you send `Command(resume={"data": expert_input})`, LangGraph:
+
+1. **Identifies the interrupted node**: Uses checkpointed state to know it was in the "tools" node
+2. **Restarts the node**: Re-executes the entire `human_assistance` function
+3. **Provides resume data**: The interrupt call receives your `{"data": expert_input}`
+4. **Continues normally**: Function completes and returns the tool result
+
+### Why This Works:
+
+- **Checkpointer requirement**: Must compile graph with `checkpointer=memory` for interrupts
+- **Thread persistence**: Interrupted threads can resume months later on different machines
+- **State preservation**: All context needed for resumption is stored in the checkpoint
+- **Tool call ID matching**: LangGraph automatically matches resume data to the correct tool call
+
+### Pattern:
+```python
+# Execution flow:
+# 1. LLM calls human_assistance tool
+# 2. interrupt() pauses and saves state
+# 3. state.next contains pending node info
+# 4. Command(resume=...) restarts the node with your data
+# 5. Tool completes and returns result to LLM
+```
+
+This durable execution model enables robust human-in-the-loop workflows where interrupts can be resumed reliably across sessions.
+
 # Langgraph streaming
 
 Check out this page if I wana learn about streaming
