@@ -1,11 +1,7 @@
-from typing import Annotated
-
 from langchain_openai import ChatOpenAI
-from typing_extensions import TypedDict
 from dotenv import load_dotenv
 
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
 from IPython.display import Image, display
 from langgraph.graph import MessagesState
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
@@ -45,7 +41,8 @@ except Exception:
 def stream_graph_updates(user_input: str):
     for event in graph.stream({"messages": [HumanMessage(content=user_input)]}):
         for value in event.values():
-            print("Assistant:", value["messages"][-1].content)
+            # print("Assistant:", value["messages"][-1].content)
+            print("Messages:", value["messages"][-1])
 
 
 while True:
