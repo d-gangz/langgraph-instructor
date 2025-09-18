@@ -1,7 +1,7 @@
 """
 Builds upon 3-memory.py by adding human in the loop.
 
-Added human in the loop to the chatbot. it works quite well now. I can see the human in the loop working.
+Added human in the loop to the chatbot. it works quite well now. I can see the human in the loop working. Tested out the various OpenAI parameters for the Responses API like reasoning, summary, and verbosity.
 """
 
 from dotenv import load_dotenv
@@ -52,6 +52,11 @@ def tavily_search(query: str, max_results: int | None = None) -> dict:
 # using the gpt-5-nano model with the responses api
 llm = ChatOpenAI(
     model="gpt-5-nano",
+    reasoning={
+        "effort": "low",
+        "summary": "auto",  # for summary, you can choose "auto" or "detailed" to show reasoning summary
+    },
+    verbosity="low",
     use_responses_api=True,
 )
 
